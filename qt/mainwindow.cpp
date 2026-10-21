@@ -12,7 +12,9 @@
 #include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
+#include <QIntValidator>
 #include <QWidget>
+
 
 /* 搭好输入项，并把客户端信号接到日志和按钮。 */
 MainWindow::MainWindow(QWidget *parent)
@@ -36,9 +38,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_portSpin->setRange(1, 65535);
     m_portSpin->setValue(21);
-    m_userEdit->setText(QStringLiteral("anonymous"));
+    m_userEdit->setText(QStringLiteral("admin"));
     m_passEdit->setEchoMode(QLineEdit::Password);
-    m_passEdit->setText(QStringLiteral("anonymous@"));
+    m_passEdit->setText(QStringLiteral("qt"));
     m_hostEdit->setPlaceholderText(QString::fromUtf8("IP 或域名"));
     m_remoteEdit->setPlaceholderText(QStringLiteral("/pub/file.bin"));
     m_log->setReadOnly(true);
