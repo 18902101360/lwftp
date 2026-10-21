@@ -31,6 +31,10 @@
 #include "lwftp_port_qt.h"
 
 #define CHUNK_CAP 32768   /* 单次投递最大字节数 */
+#define TX_MSS    32768   /* 上传块大小：库每收到一次 sent 确认就喂 mss 字节，
+                           在途数据约 2×MSS；块太小会把传输变成事件往返拉锯。
+                           上限约束：两次确认间隔的 drained 总量 < 2×MSS，
+                           须 <= 65535（sent 回调 len 为 uint16），32768 正好卡满 */
 
 struct lwftp_port_pcb {
     QTcpSocket *sock;
@@ -40,6 +44,7 @@ struct lwftp_port_pcb {
     lwftp_port_sent_fn      sent_cb;
     lwftp_port_err_fn       err_cb;
     lwftp_port_connected_fn connected_cb;
+    qint64   pending_sent;/* 已 drained 但未上报的字节数（门控累计，保证计数精确） */
     uint16_t mss;
     uint8_t  dead;        /* 致命错误已上报，等待销毁 */
     uint8_t  want_close;  /* close 已调用，等待断开后销毁 */
@@ -183,7 +188,7 @@ extern "C" lwftp_port_pcb_t *lwftp_port_new(void)
 {
     lwftp_port_pcb_t *pcb = new lwftp_port_pcb_t;
     memset(pcb, 0, sizeof(*pcb));
-    pcb->mss = 1460;
+    pcb->mss = TX_MSS;
     pcb->is_control = g_pcbs.isEmpty() ? 1 : 0;   /* lwftp 总是先建控制连接 */
     g_pcbs.insert(pcb);
     return pcb;
@@ -213,8 +218,16 @@ extern "C" int lwftp_port_connect(lwftp_port_pcb_t *pcb, uint32_t ip,
             pcb->connected_cb(pcb->arg, pcb, LWFTP_PORT_OK);
     });
     QObject::connect(sock, &QTcpSocket::bytesWritten, sock, [pcb](qint64 n) {
-        if (!pcb->dead && pcb->sent_cb)
-            pcb->sent_cb(pcb->arg, pcb, (uint16_t)qMin<qint64>(n, 0xFFFF));
+        if (pcb->dead || !pcb->sent_cb) return;
+        pcb->pending_sent += n;
+        /* 低水位门控：Qt 发送缓冲低于一个 MSS 时才上报确认（库随即泵下一块）。
+           否则慢服务器下每 drained 一点就又写一大块，缓冲会无界膨胀。
+           两次上报间隔内 drained 总量 < 2×MSS，uint16 计数不会溢出。 */
+        if (pcb->sock->bytesToWrite() < pcb->mss) {
+            qint64 total = pcb->pending_sent;
+            pcb->pending_sent = 0;
+            pcb->sent_cb(pcb->arg, pcb, (uint16_t)qMin<qint64>(total, 0xFFFF));
+        }
     });
     QObject::connect(sock, &QObject::destroyed, sock, [pcb]() { port_on_destroyed(pcb); });
 
@@ -242,6 +255,8 @@ extern "C" void lwftp_port_close(lwftp_port_pcb_t *pcb)
 {
     if (pcb->dead) return;                        /* 已在销毁流程 */
     pcb->want_close = 1;
+    pcb->sent_cb = NULL;   /* 关后不再泵数：余量 drained 的 bytesWritten 不应再
+                            触发库的发送回调（库此时视句柄已关，会误关空指针） */
     QTcpSocket *sock = pcb->sock;
     if (!sock || sock->state() == QAbstractSocket::UnconnectedState) {
         sock->deleteLater();                      /* 已断开 -> 直接收尾 */

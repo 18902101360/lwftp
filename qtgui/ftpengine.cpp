@@ -230,6 +230,10 @@ void FtpEngine::onDone(int result)
         if (m_finishReported) break;               /* 超时已上报过 */
         m_finishReported = true;
         if (result == LWFTP_RESULT_OK) {
+            /* 上传收尾时最后一块的 sent 确认可能被 close 截掉（移植层关后
+               不再泵数），按本地文件大小对齐最终字节数 */
+            if (m_phase == PhStor && m_file.isOpen())
+                m_bytes = m_file.size();
             finishTransfer(true, QStringLiteral("完成"));
         } else {
             finishTransfer(false, QString::fromUtf8(resultText(result)));

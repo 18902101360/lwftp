@@ -59,7 +59,7 @@ private:
     Phase     m_phase;
     QFile     m_file;
     QByteArray m_user, m_pass, m_remote;  /* 库只保存指针，内容由成员持有 */
-    char      m_txBuf[2048];    /* 上传读盘缓冲（>= mss） */
+    char      m_txBuf[32768];   /* 上传读盘缓冲（须 >= 移植层 mss） */
     qint64    m_bytes;
     qint64    m_lastReport;     /* 上次进度信号时的字节数（限流用） */
     bool      m_finishReported; /* 防止超时与完成重复上报 */
