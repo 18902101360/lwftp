@@ -1,5 +1,5 @@
 /*
- * lwftp.h : a lightweight FTP client using raw API of LWIP
+ * lwftp.h : a lightweight FTP client
  *
  * Copyright (c) 2014 GEZEDO
  * All rights reserved.
@@ -30,11 +30,16 @@
  *
  */
 
+/*
+ * 本版本已去除 lwIP 依赖：网络收发全部通过 lwftp_port.h 的中立 C 接口，
+ * 由应用方用任意 TCP 设施实现（本仓库用 Qt 的 QTcpSocket 实现）。
+ */
+
 #ifndef LWFTP_H
 #define LWFTP_H
 
-#include "lwip/opt.h"
-#include "lwip/ip.h"
+#include <stdint.h>
+#include "lwftp_port.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -78,29 +83,29 @@ typedef enum  {
 /** LWFTP session structure */
 typedef struct {
   // User interface
-  ip_addr_t     server_ip;
-  u16_t         server_port;
+  uint32_t      server_ip;      /* 主机字节序 IPv4，可用 lwftp_port_ip_from_str() */
+  uint16_t      server_port;
   const char    *remote_path;
   const char    *user;
   const char    *pass;
   void          *handle;
-  uint          (*data_source)(void*, const char**, uint);
-  uint          (*data_sink)(void*, const char*, uint);
+  unsigned      (*data_source)(void*, const char**, unsigned);
+  unsigned      (*data_sink)(void*, const char*, unsigned);
   void          (*done_fn)(void*, int);
-  uint          timeout;
+  unsigned      timeout;
   // Internal data
   lwftp_state_t   control_state;
   lwftp_state_t   target_state;
   lwftp_state_t   data_state;
-  struct tcp_pcb  *control_pcb;
-  struct tcp_pcb  *data_pcb;
+  lwftp_port_pcb_t *control_pcb;
+  lwftp_port_pcb_t *data_pcb;
 } lwftp_session_t;
 
 // LWFTP API
-err_t lwftp_connect(lwftp_session_t *s);
-err_t lwftp_store(lwftp_session_t *s);
-err_t lwftp_retrieve(lwftp_session_t *s);
-void  lwftp_close(lwftp_session_t *s);
+int  lwftp_connect(lwftp_session_t *s);
+int  lwftp_store(lwftp_session_t *s);
+int  lwftp_retrieve(lwftp_session_t *s);
+void lwftp_close(lwftp_session_t *s);
 
 #ifdef __cplusplus
 }
