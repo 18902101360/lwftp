@@ -17,6 +17,7 @@
 #include <QTcpSocket>
 #include <QAbstractSocket>
 #include <QHostAddress>
+#include <QNetworkProxy>
 #include <QThread>
 #include <QSet>
 #include <QByteArray>
@@ -170,6 +171,9 @@ static void port_on_error(lwftp_port_pcb_t *pcb, QAbstractSocket::SocketError e)
     if (pcb->dead) return;
     if (e == QAbstractSocket::RemoteHostClosedError) return;   /* 等同 FIN */
     pcb->dead = 1;
+    /* 把 Qt 的真实错误打到日志，便于诊断（否则一律显示 Not connected.） */
+    lwftp_port_log("socket error %d: %s", (int)e,
+                   pcb->sock->errorString().toLocal8Bit().constData());
     lwftp_port_err_fn cb = pcb->err_cb;
     if (cb) cb(pcb->arg, LWFTP_PORT_ERR_CONN);     /* 库收到 err 后不再 close */
     pcb->sock->deleteLater();                      /* destroyed 时释放句柄 */
@@ -204,6 +208,10 @@ extern "C" int lwftp_port_connect(lwftp_port_pcb_t *pcb, uint32_t ip,
                                   uint16_t port, lwftp_port_connected_fn fn)
 {
     QTcpSocket *sock = new QTcpSocket();   /* 当前线程即网络线程 */
+    /* 强制不走系统代理：Windows 上 Qt 会自动采用 Internet 选项里的代理，
+       而代理绕过列表通常不含 169.254.* 等直连地址，会被静默劫走导致
+       "The proxy type is invalid for this operation" 之类的怪错 */
+    sock->setProxy(QNetworkProxy::NoProxy);
     pcb->sock = sock;
     pcb->buf = new QByteArray;
     pcb->connected_cb = fn;
